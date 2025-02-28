@@ -235,7 +235,9 @@ Calibrate:
     Call CaliBlue
     Call CaliBlack
     
+     
     MOVLW   0x00
+    MOVWF   PORTD
     MOVWF   IntExt0
     MOVLW   0b11010000
     MOVWF   INTCON
@@ -275,6 +277,7 @@ CaliRed:
     MOVLW   0b00010010
     MOVWF   PORTD;
     CALL    Delay2s
+    CALL    Delay2s
     CALL    ADC_Start
     movff   ADRESH, RedVal  ; Store current ADC reading in BlackVal
     CALL    Delay3Hz
@@ -304,6 +307,7 @@ CaliRed:
 CaliGreen:
     MOVLW   0b10001000
     MOVWF   PORTD;
+    CALL    Delay2s
     CALL    Delay2s
     CALL    ADC_Start
     movff   ADRESH, GreenVal  ; Store current ADC reading in BlackVal
@@ -335,6 +339,7 @@ CaliBlue:
     MOVLW   0b01000100
     MOVWF   PORTD;
     CALL    Delay2s
+    CALL    Delay2s
     CALL    ADC_Start
     movff   ADRESH, BlueVal  ; Store current ADC reading in BlackVal
      CALL    Delay3Hz
@@ -364,6 +369,7 @@ CaliBlue:
 CaliBlack:
     movlw   0xFF
     MOVWF   PORTD;
+    CALL    Delay2s
     CALL    Delay2s
     CALL    ADC_Start
     movff   ADRESH, BlackVal  ; Store current ADC reading in BlackVal
@@ -440,7 +446,7 @@ Check_Black:
         SUBWF   sensor_MM,W         ; W = ADCResult - Black logic
         BTFSC   STATUS, 0           ; If ADCResult < 51 (C is set), go to 0-1V range
         GOTO    Check_Blue 
-        MOVLW   0x01                ; Output "00000001" for 0-1V
+        MOVLW   0xFF                ; Output "00000001" for 0-1V
 	MOVWF   PORTD
 	CALL    Delay2s
 	return
@@ -449,7 +455,7 @@ Check_Blue:
         SUBWF   sensor_MM,W         ; W = ADCResult - 102
         BTFSC   STATUS, 0           
         GOTO    Check_Red          
-        MOVLW   0x03                ; Output "00000011" for 1-2V
+        MOVLW   0b01000100                ; Output "00000011" for 1-2V
         MOVWF   PORTD
         CALL    Delay2s
         return
@@ -459,7 +465,7 @@ Check_Red:
         SUBWF   sensor_MM,W         ; W = ADCResult - 153
         BTFSC   STATUS, 0           
         GOTO    Check_Green          
-        MOVLW   0x07                ; Output "00000111" for 2-3V
+        MOVLW   0b00010010                ; Output "00000111" for 2-3V
         MOVWF   PORTD
         CALL    Delay2s
         return
@@ -469,13 +475,13 @@ Check_Green:
         SUBWF   sensor_MM,W         ; W = ADCResult - 204
         BTFSC   STATUS, 0           
         GOTO    Check_White          
-        MOVLW   0x0F                ; Output "00001111" for 3-4V
+        MOVLW   0b10001000                ; Output "00001111" for 3-4V
         MOVWF   PORTD
         CALL    Delay2s
         return
 
 Check_White:
-        MOVLW   0x1F                ; Output "00011111" for 4-5V
+        MOVLW   0x01                ; Output "00011111" for 4-5V
         MOVWF   PORTD
         CALL    Delay2s
         return
