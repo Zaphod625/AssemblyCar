@@ -52,8 +52,8 @@ GOTO	LP_ISR
 Setup:
 
     ; --- Set up I/O ---
-       BSF     TRISC, 3 ,0            ; Set RC3 as input (analog)
-        BSF     ANSELC, 3, 0           ; Set RC3 as analog
+       //BSF     TRISC, 3 ,0            ; Set RC3 as input (analog)
+        //BSF     ANSELC, 3, 0           ; Set RC3 as analog
 ;	MOVLB   0x0F
 ;	CLRF    PORTB
 ;	CLRF    LATB
@@ -69,10 +69,17 @@ Setup:
 
     ; --- Set up ADC ---
     
+    ; BAN TEST
+	
+    
+    
+    ;BNA Test end
+    
         MOVLB   0xF                   ; Switch to Bank F for ADC registers
 	CLRF	PORTC
 	CLRF	LATC
-	CLRF	TRISC			; Make entire PORTC input pins
+	MOVLW	0xFF
+	MOVWF	TRISC			; Make entire PORTC input pins
 	MOVLW	0b11111000
 	MOVWF	ANSELC
         CLRF    ADRESH, 0              ; Clear ADC result high byte
@@ -132,8 +139,11 @@ Setup:
     
 Main:
     ;ADC Readings
-    CALL ADC_Loop
-   // CALL	ADC_read
+    ;MOVLW   0xFF
+    ;MOVWF   PORTD
+    CALL    ADC_Loop
+   ;	  CALL    Set_Val    ues for testing
+    CALL    ADC_read
    
    ; Interupt Handling below
     MOVLW	0x00
@@ -147,6 +157,7 @@ Main:
    
 ADC_Loop:
     //Read pin RC3, channel AN15 
+    CALL    Delay3Hz
     MOVLW   0b00111101
     MOVWF   ADCON0
     CALL    ADC_Start
@@ -155,6 +166,7 @@ ADC_Loop:
     MOVWF   sensor_MM
     
     //Read pin RC4, channel AN16
+    CALL    Delay3Hz
     MOVLW   0b1000001
     MOVWF   ADCON0
     CALL    ADC_Start
@@ -163,6 +175,7 @@ ADC_Loop:
     MOVWF   sensor_MR
     
     //Read pin RC5, channel AN17 
+    CALL    Delay3Hz
     MOVLW   0b01000101
     MOVWF   ADCON0
     CALL    ADC_Start
@@ -171,6 +184,7 @@ ADC_Loop:
     MOVWF   sensor_ML
     
     //Read pin RC6, channel AN18
+    CALL    Delay3Hz
     MOVLW   0b01001001
     MOVWF   ADCON0
     CALL    ADC_Start
@@ -179,6 +193,7 @@ ADC_Loop:
     MOVWF   sensor_LL
     
     //Read pin RC7, channel AN19
+    CALL    Delay3Hz
     MOVLW   0b01001101
     MOVWF   ADCON0
     CALL    ADC_Start
@@ -219,6 +234,8 @@ LP_ISR:
 Reg_Dump:
     MOVFF   ADRESH, PORTD
     CAll    Delay2s
+    CAll    Delay2s
+    CAll    Delay2s
     MOVLW   0x00
     MOVWF   IntExt0
     MOVLW   0b01001000
@@ -229,6 +246,10 @@ Reg_Dump:
     GOTO    Main
     
 Calibrate:
+    // Set to use sensor_MM as the callibrated number
+    MOVLW   0b00111101
+    MOVWF   ADCON0
+    
     Call CaliWhite
     Call CaliRed
     Call CaliGreen
@@ -237,7 +258,7 @@ Calibrate:
     
      
     MOVLW   0x00
-    MOVWF   PORTD
+    MOVWF   PORTD  
     MOVWF   IntExt0
     MOVLW   0b11010000
     MOVWF   INTCON
@@ -248,8 +269,11 @@ CaliWhite:
     MOVWF   PORTD;
     CALL    Delay2s
     CALL    Delay2s
+    CALL    Delay2s
     CALL    ADC_Start
-    movff   ADRESH, WhiteVal  ; Store current ADC reading in BlackVal
+    MOVF    ADRESH, W  ; Store current ADC reading in BlackVal
+    ADDLW   0x06	; add a 100mV on top of the Measured ADC reading for the logic to see whta colour we are reading
+    MOVWF   WhiteVal    
     MOVLW   0b00000001
     MOVWF   PORTD;
     CALL    Delay3Hz
@@ -278,8 +302,11 @@ CaliRed:
     MOVWF   PORTD;
     CALL    Delay2s
     CALL    Delay2s
+    CALL    Delay2s
     CALL    ADC_Start
-    movff   ADRESH, RedVal  ; Store current ADC reading in BlackVal
+    MOVF    ADRESH, W  ; Store current ADC reading in BlackVal
+    ADDLW   0x06	; add a 100mV on top of the Measured ADC reading for the logic to see whta colour we are reading
+    MOVWF   RedVal    
     CALL    Delay3Hz
     MOVLW   0b00010010
     MOVWF   PORTD;
@@ -309,8 +336,11 @@ CaliGreen:
     MOVWF   PORTD;
     CALL    Delay2s
     CALL    Delay2s
+    CALL    Delay2s
     CALL    ADC_Start
-    movff   ADRESH, GreenVal  ; Store current ADC reading in BlackVal
+    MOVF    ADRESH, W  ; Store current ADC reading in BlackVal
+    ADDLW   0x06	; add a 100mV on top of the Measured ADC reading for the logic to see whta colour we are reading
+    MOVWF   GreenVal    
     CALL    Delay3Hz
     MOVLW   0b10001000
     MOVWF   PORTD;
@@ -340,9 +370,12 @@ CaliBlue:
     MOVWF   PORTD;
     CALL    Delay2s
     CALL    Delay2s
+    CALL    Delay2s
     CALL    ADC_Start
-    movff   ADRESH, BlueVal  ; Store current ADC reading in BlackVal
-     CALL    Delay3Hz
+    MOVF    ADRESH, W  ; Store current ADC reading in BlackVal
+    ADDLW   0x06	; add a 100mV on top of the Measured ADC reading for the logic to see whta colour we are reading
+    MOVWF   BlueVal    
+    CALL    Delay3Hz
     MOVLW   0b01000100
     MOVWF   PORTD;
     CALL    Delay3Hz
@@ -371,9 +404,12 @@ CaliBlack:
     MOVWF   PORTD;
     CALL    Delay2s
     CALL    Delay2s
+    CALL    Delay2s
     CALL    ADC_Start
-    movff   ADRESH, BlackVal  ; Store current ADC reading in BlackVal
-     CALL    Delay3Hz
+    MOVF    ADRESH, W  ; Store current ADC reading in BlackVal
+    ADDLW   0x06	; add a 100mV on top of the Measured ADC reading for the logic to see whta colour we are reading
+    MOVWF   BlackVal    
+    CALL    Delay3Hz
     MOVLW   0xFF
     MOVWF   PORTD;
     CALL    Delay3Hz
@@ -437,43 +473,57 @@ ADC_read:
         ;MOVF    ADRESH, 0           ; Move ADRESH to W (contains 8 MSBs of ADCResult)
         ;MOVWF   ADCResult           ; Store ADC result in variable
 	CALL	Check_Black
-	GOTO	Main
+	return
+	
+Set_Val:
+    ; this function is purely for tetsing logic of the check values to displasy the result from one phototransisitor
+    MOVLW   0x05
+    MOVWF  sensor_MM
+    
+    MOVLW   0x46
+    MOVWF  BlackVal
+    
+    MOVLW   0x5F
+    MOVWF  RedVal
+    
+    MOVLW   0x98
+    MOVWF  BlueVal
+    
+    MOVLW   0xC8
+    MOVWF  GreenVal
+    return
+    
 
 	
 Check_Black:
         ; Check if ADCResult < 51 (0-1V range)
-        MOVLW   BlackVal                  ; This needs to be updated to Black, and the same logic to the rest
-        SUBWF   sensor_MM,W         ; W = ADCResult - Black logic
-        BTFSC   STATUS, 0           ; If ADCResult < 51 (C is set), go to 0-1V range
-        GOTO    Check_Blue 
+        MOVF	BlackVal,0                  ; This needs to be updated to Black, and the same logic to the rest
+	CPFSLT	sensor_MM
+        GOTO    Check_Red
         MOVLW   0xFF                ; Output "00000001" for 0-1V
 	MOVWF   PORTD
 	CALL    Delay2s
 	return
+Check_Red:
+        MOVF   RedVal,0                 
+        CPFSLT	sensor_MM
+        GOTO    Check_Blue          
+        MOVLW   0b00010010                ; Output "00000111" for 2-3V
+        MOVWF   PORTD
+        CALL    Delay2s
+        return
 Check_Blue:
-        MOVLW   BlueVal                 
-        SUBWF   sensor_MM,W         ; W = ADCResult - 102
-        BTFSC   STATUS, 0           
-        GOTO    Check_Red          
+        MOVF   BlueVal,0
+        CPFSLT	sensor_MM
+        GOTO    Check_Green          
         MOVLW   0b01000100                ; Output "00000011" for 1-2V
         MOVWF   PORTD
         CALL    Delay2s
         return
 
-Check_Red:
-        MOVLW   RedVal                 
-        SUBWF   sensor_MM,W         ; W = ADCResult - 153
-        BTFSC   STATUS, 0           
-        GOTO    Check_Green          
-        MOVLW   0b00010010                ; Output "00000111" for 2-3V
-        MOVWF   PORTD
-        CALL    Delay2s
-        return
-
 Check_Green:
-        MOVLW   GreenVal                 
-        SUBWF   sensor_MM,W         ; W = ADCResult - 204
-        BTFSC   STATUS, 0           
+        MOVF   GreenVal,0
+        CPFSLT	sensor_MM
         GOTO    Check_White          
         MOVLW   0b10001000                ; Output "00001111" for 3-4V
         MOVWF   PORTD
