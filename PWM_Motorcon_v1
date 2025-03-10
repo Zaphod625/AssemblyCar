@@ -19,7 +19,7 @@ PSECT code, abs
     goto INIT
 
 INIT:       
-    movlw   0b01010110 ; Set internal oscillator to 4 MHz
+    movlw   0b01010000 ; Set internal oscillator to 4 MHz
     movwf   OSCCON
     
    
