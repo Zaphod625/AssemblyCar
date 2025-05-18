@@ -419,46 +419,48 @@ CopySlogan:
 Main:
     
     BTFSS   CS_Enable, 0
-    CALL    Colour_Read				    ; used to show what colour we on (uses sensor_MM strobed value)
+    CALL    Colour_Read                          ; Used to show what colour we on (uses sensor_MM strobed value)
     
-     BTFSC   Test_start_bit, 0			    ; Test with a set bit for now on external interrupt INT2 - RB2
-     GOTO    Cap_Touch_Detect			    ; used to continuously check if touch sensed
+    BTFSC   Test_start_bit, 0                    ; Test with a set bit for now on external interrupt INT2 - RB2
+    GOTO    Cap_Touch_Detect                     ; Used to continuously check if touch sensed
     
-     WaitRX:
-    btfss   PIR1, 5, 0  ; Check if data received
-    bra     WaitRX
-    movff   RCREG1, Temp
+    ; Start of UART processing loop
+    ReceiveLoop:
+        btfss   PIR1, 5, 0                      ; Check if data received
+        bra     ReceiveLoop                     ; Loop until character received
+        
+        movff   RCREG1, Temp                    ; Get received character
+        
+        ; Echo typed character
+        movf    Temp, 0, 0
+        call    SendChar
+        
+        ; Check for <Enter>
+        movf    Temp, 0, 0
+        xorlw   0x0D
+        bz      ProcessCompleteCommand          ; If Enter, process the complete command
+        
+        ; Check if we're in Program/Edit mode
+        btfsc   EditMode, 0, 0
+        goto    StoreInSloganBuffer
+        
+        ; Store in RXTable (up to buffer size limit)
+        movf    RXBuffSize, 0, 0
+        cpfslt  RXIndex, 0                      ; Skip if RXIndex < RXBuffSize
+        bra     ReceiveLoop                     ; Buffer full, ignore character and continue receiving
+        
+        lfsr    0, RXTable                      ; Point to start of buffer
+        movf    RXIndex, 0, 0
+        addwf   FSR0L, 1, 0                     ; Adjust pointer to current position
+        movf    Temp, 0, 0                      ; Get the received character
+        movwf   POSTINC0, 0                     ; Store it in buffer
+        incf    RXIndex, 1, 0                   ; Increment index
+        
+        bra     ReceiveLoop                     ; Continue receiving characters
     
-    ; Echo typed character
-    movf    Temp, 0, 0
-    call    SendChar
-    
-    ; Check for <Enter>
-    movf    Temp, 0, 0
-    xorlw   0x0D
-    bz      ProcessInput
-    
-    ; Check if we're in Program/Edit mode
-    btfsc   EditMode, 0, 0
-    goto    StoreInSloganBuffer
-    
-    ; Store in RXTable (up to buffer size limit)
-    movf    RXBuffSize, 0, 0
-    cpfslt  RXIndex, 0  ; Skip if RXIndex < RXBuffSize
-    bra     Main    ; Buffer full, ignore character
-    
-    lfsr    0, RXTable  ; Point to start of buffer
-    movf    RXIndex, 0, 0
-    addwf   FSR0L, 1, 0 ; Adjust pointer to current position
-    movf    Temp, 0, 0  ; Get the received character
-    movwf   POSTINC0, 0 ; Store it in buffer
-    incf    RXIndex, 1, 0 ; Increment index
-    ;Interrupts handled in HP_ISR
-    ;Interrupt on RB0 -> INT0 -> Calibrate_ver_RGB
-    ;Interrupt on RB1 -> INT1 -> Follower_Colour_Select
-    ;Interrupt on RB2 -> INT2 -> Enables CAP_TOUCH_DETECT
-   
-    GOTO	Main   
+ProcessCompleteCommand:
+    call    ProcessInput                        ; Process the complete command
+    goto    Main                                ; Return to main loop after processing 
   
 ;=================================================================================================================
 
@@ -1875,17 +1877,17 @@ Left:
     movlw   32          ; Space character
     cpfslt  Temp, 0     ; Skip if Temp < 32
     goto    CheckUpperLimit
-    goto    Main    ; Ignore control characters
+    goto    ReceiveLoop    ; Ignore control characters
     
 CheckUpperLimit:
     movlw   127         ; Above printable ASCII
     cpfslt  Temp, 0     ; Skip if Temp < 127 
-    goto    Main    ; Ignore high-ASCII characters
+    goto    ReceiveLoop    ; Ignore high-ASCII characters
     
     ; Store in CustomSlogan (up to buffer size limit)
     movlw   48          ; Max slogan size (safe limit)
     cpfslt  ProgramIndex, 0  ; Skip if ProgramIndex < 48
-    goto    Main    ; Buffer full, ignore character
+    goto    ReceiveLoop   ; Buffer full, ignore character
     
     lfsr    0, CustomSlogan  ; Point to start of buffer
     movf    ProgramIndex, 0, 0
@@ -1895,7 +1897,7 @@ CheckUpperLimit:
     movlw   0           ; Add null terminator
     movwf   INDF0, 0    ; Store it
     incf    ProgramIndex, 1, 0 ; Increment index
-    goto    Main
+    goto    ReceiveLoop
 
 ;========== Process Input Based on Current Mode ==========
 ProcessInput:
@@ -2034,32 +2036,88 @@ ProcessSelectColor:
     goto    Main
 
 SelectRed:
-    movlw   1           ; Set color to Red (1)
+    ; Set both color indicators
+    movlw   1            ; Set color to Red (1)
     movwf   SelectedColor, 0
+    
+    ; Clear all follow_colour bits and set only Red
+    clrf    follow_colour
+    bsf     follow_colour, 4  ; Set bit 4 for RED
+    
+    ; Indicate selection visually
+    MOVLW   0b00000111   ; Turn off RGB LEDs
+    MOVWF   PORTA
+    BSF     PORTA, 4     ; Turn on RED indicator LED
+    
+    ; Let the system know color is selected
+    BSF     CS_Enable, 0 ; Flag that color is selected
+    
     call    SendCRLF
     call    SendRedSelectedMsg
     call    ClearBuffer
     goto    Main
 
 SelectGreen:
-    movlw   2           ; Set color to Green (2)
+    ; Set both color indicators
+    movlw   2            ; Set color to Green (2)
     movwf   SelectedColor, 0
+    
+    ; Clear all follow_colour bits and set only Green
+    clrf    follow_colour
+    bsf     follow_colour, 5  ; Set bit 5 for GREEN
+    
+    ; Indicate selection visually (same as hardware does)
+    MOVLW   0b00000111   ; Turn off RGB LEDs
+    MOVWF   PORTA
+    BSF     PORTA, 5     ; Turn on GREEN indicator LED
+    
+    ; Let the system know color is selected
+    BSF     CS_Enable, 0 ; Flag that color is selected - critical for hardware integration
+    
     call    SendCRLF
     call    SendGreenSelectedMsg
     call    ClearBuffer
     goto    Main
 
 SelectBlue:
-    movlw   3           ; Set color to Blue (3)
+    ; Set both color indicators
+    movlw   3            ; Set color to Blue (3)
     movwf   SelectedColor, 0
+    
+    ; Clear all follow_colour bits and set only Blue
+    clrf    follow_colour
+    bsf     follow_colour, 6  ; Set bit 6 for BLUE
+    
+    ; Indicate selection visually (same as hardware does)
+    MOVLW   0b00000111   ; Turn off RGB LEDs
+    MOVWF   PORTA
+    BSF     PORTA, 6     ; Turn on BLUE indicator LED
+    
+    ; Let the system know color is selected
+    BSF     CS_Enable, 0 ; Flag that color is selected - critical for hardware integration
+    
     call    SendCRLF
     call    SendBlueSelectedMsg
     call    ClearBuffer
     goto    Main
 
 SelectBlack:
-    movlw   4           ; Set color to Black (4)
+    ; Set both color indicators
+    movlw   4            ; Set color to Black (4)
     movwf   SelectedColor, 0
+    
+    ; Clear all follow_colour bits and set only Black
+    clrf    follow_colour
+    bsf     follow_colour, 7  ; Set bit 7 for BLACK
+    
+    ; Indicate selection visually (same as hardware does)
+    MOVLW   0b00000111   ; Turn off RGB LEDs
+    MOVWF   PORTA
+    BSF     PORTA, 7     ; Turn on BLACK indicator LED
+    
+    ; Let the system know color is selected
+    BSF     CS_Enable, 0 ; Flag that color is selected - critical for hardware integration
+    
     call    SendCRLF
     call    SendBlackSelectedMsg
     call    ClearBuffer
@@ -2093,6 +2151,12 @@ ProcessDiagnostics:
     btfsc   STATUS, 2, 0 ; Skip if Z flag is clear (not matched)
     goto    DiagRight
     
+    ; Check for "T" (Stop)
+    movf    INDF0, 0, 0  ; Reload first character
+    xorlw   'T'
+    btfsc   STATUS, 2, 0 ; Skip if Z flag is clear (not matched)
+    goto    DiagStop
+    
     ; Invalid diagnostics command
     call    SendInvalidDiagMsg
     call    ClearBuffer
@@ -2101,27 +2165,130 @@ ProcessDiagnostics:
 DiagSensorTest:
     call    SendCRLF
     call    SendSensorTestMsg
+    
+    ; Call the ADC_Loop function to read all sensors
+    call    ADC_Loop
+    
+    ; Display sensor values via UART
+    call    SendCRLF
+    call    SendSensorValuesMsg  ; You'll need to create this function
+    
     call    ClearBuffer
     goto    Main
 
 DiagForward:
     call    SendCRLF
     call    SendForwardMsg
+    
+    ; Call your forward motor function
+    call    GO_Straight  ; This seems to be your function for moving straight
+    
     call    ClearBuffer
     goto    Main
 
 DiagLeft:
     call    SendCRLF
     call    SendLeftMsg
+    
+    ; Call your left turn motor function
+    call    Left  ; This seems to be your function for turning left
+    
     call    ClearBuffer
     goto    Main
 
 DiagRight:
     call    SendCRLF
     call    SendRightMsg
+    
+    ; Call your right turn motor function
+    call    Right  ; This seems to be your function for turning right
+    
     call    ClearBuffer
     goto    Main
-
+DiagStop:
+    call    SendCRLF
+    call    SendStopMsg  ; You'll need to create this message
+    
+    ; Call your stop motor function
+    call    Stop_Car  ; This seems to be your function for stopping
+    
+    call    ClearBuffer
+    goto    Main
+    
+SendSensorValuesMsg:
+    ; First send a header
+    movlw   high SensorHeaderStr
+    movwf   TBLPTRH, 0
+    movlw   low SensorHeaderStr
+    movwf   TBLPTRL, 0
+    call    SendString
+    
+    ; Send Middle Middle sensor value
+    movlw   'M'
+    call    SendChar
+    movlw   'M'
+    call    SendChar
+    movlw   ':'
+    call    SendChar
+    movlw   ' '
+    call    SendChar
+    movf    sensor_MM, W  ; Get MM sensor value
+    call    SendHexByte   ; You'll need to create this helper
+    call    SendCRLF
+    
+    ; Send Middle Right sensor value
+    movlw   'M'
+    call    SendChar
+    movlw   'R'
+    call    SendChar
+    movlw   ':'
+    call    SendChar
+    movlw   ' '
+    call    SendChar
+    movf    sensor_MR, W  ; Get MR sensor value
+    call    SendHexByte   ; Send as hex
+    call    SendCRLF
+    
+    ; Send Middle Left sensor value
+    movlw   'M'
+    call    SendChar
+    movlw   'L'
+    call    SendChar
+    movlw   ':'
+    call    SendChar
+    movlw   ' '
+    call    SendChar
+    movf    sensor_ML, W  ; Get ML sensor value
+    call    SendHexByte   ; Send as hex
+    call    SendCRLF
+    
+    ; Send Right Right sensor value
+    movlw   'R'
+    call    SendChar
+    movlw   'R'
+    call    SendChar
+    movlw   ':'
+    call    SendChar
+    movlw   ' '
+    call    SendChar
+    movf    sensor_RR, W  ; Get RR sensor value
+    call    SendHexByte   ; Send as hex
+    call    SendCRLF
+    
+    ; Send Left Left sensor value
+    movlw   'L'
+    call    SendChar
+    movlw   'L'
+    call    SendChar
+    movlw   ':'
+    call    SendChar
+    movlw   ' '
+    call    SendChar
+    movf    sensor_LL, W  ; Get LL sensor value
+    call    SendHexByte   ; Send as hex
+    call    SendCRLF
+    
+    return
 ;========== Check if command is "Howzit" ==========
 CheckHowzit:
     movlw   6           ; Length of "Howzit"
@@ -2218,13 +2385,13 @@ Calibrate:
     movlw   2
     movwf   DisplayValue, 0  ; Display "2" for Calibrate mode
     call    UpdateDisplay
-    bcf     PORTE, 0, 0   ; RE0 = 0
-    bsf     PORTE, 1, 0   ; RE1 = 1
-    bcf     PORTE, 2, 0   ; RE2 = 0
-
     
     call    SendCRLF
     call    SendCalibrateMsg
+    
+    ; Directly set the INT0 interrupt flag to trigger calibration
+    BSF     INTCON, 1       ; Set INT0IF (INT0 interrupt flag)
+    
     goto    FinalizeCommand
 
 RaceMode:
@@ -2238,11 +2405,97 @@ RaceMode:
     bsf     PORTE, 0, 0   ; RE0 = 1
     bsf     PORTE, 1, 0   ; RE1 = 1
     bcf     PORTE, 2, 0   ; RE2 = 0
-
     
     call    SendCRLF
     call    SendRaceMsg
+    
+    ; Check if a color is already selected
+    btfsc   CS_Enable, 0
+    call    DisplaySelectedColor  ; Display selected color
+    
+    ; If no color selected, prompt to select one
+    btfss   CS_Enable, 0
+    call    SendSelectColorFirst
+    
     goto    FinalizeCommand
+
+; New helper function to display the selected color
+DisplaySelectedColor:
+    ; Check which color is selected and turn on the corresponding LED
+    btfsc   follow_colour, 4       ; Check if RED is selected
+    bsf     PORTA, 4               ; Turn on RED indicator LED
+    
+    btfsc   follow_colour, 5       ; Check if GREEN is selected
+    bsf     PORTA, 5               ; Turn on GREEN indicator LED
+    
+    btfsc   follow_colour, 6       ; Check if BLUE is selected
+    bsf     PORTA, 6               ; Turn on BLUE indicator LED
+    
+    btfsc   follow_colour, 7       ; Check if BLACK is selected
+    bsf     PORTA, 7               ; Turn on BLACK indicator LED
+    
+    ; Send message about selected color
+    call    SendSelectedColorInfo
+    return
+
+
+; New helper function to show "Select color first" message
+SendSelectColorFirst:
+    movlw   high SelectColorFirstStr
+    movwf   TBLPTRH, 0
+    movlw   low SelectColorFirstStr
+    movwf   TBLPTRL, 0
+    call    SendString
+    return
+
+; New helper function to display info about the selected color
+SendSelectedColorInfo:
+    ; Determine which color is selected and send the appropriate message
+    btfsc   follow_colour, 4       ; Check if RED is selected
+    goto    SendRedForRaceMsg
+    
+    btfsc   follow_colour, 5       ; Check if GREEN is selected
+    goto    SendGreenForRaceMsg
+    
+    btfsc   follow_colour, 6       ; Check if BLUE is selected
+    goto    SendBlueForRaceMsg
+    
+    btfsc   follow_colour, 7       ; Check if BLACK is selected
+    goto    SendBlackForRaceMsg
+    
+    return
+
+SendRedForRaceMsg:
+    movlw   high RedForRaceStr
+    movwf   TBLPTRH, 0
+    movlw   low RedForRaceStr
+    movwf   TBLPTRL, 0
+    call    SendString
+    return
+
+SendGreenForRaceMsg:
+    movlw   high GreenForRaceStr
+    movwf   TBLPTRH, 0
+    movlw   low GreenForRaceStr
+    movwf   TBLPTRL, 0
+    call    SendString
+    return
+
+SendBlueForRaceMsg:
+    movlw   high BlueForRaceStr
+    movwf   TBLPTRH, 0
+    movlw   low BlueForRaceStr
+    movwf   TBLPTRL, 0
+    call    SendString
+    return
+
+SendBlackForRaceMsg:
+    movlw   high BlackForRaceStr
+    movwf   TBLPTRH, 0
+    movlw   low BlackForRaceStr
+    movwf   TBLPTRL, 0
+    call    SendString
+    return
 
 Diagnostics:
     movlw   4           ; Set mode to Diagnostics (4)
@@ -2657,6 +2910,39 @@ Wait_For_Byte:
 Read_Done:
     return
 
+    
+; Convert byte in W to hex and send via UART
+SendHexByte:
+    movwf   Temp          ; Save the byte
+    
+    ; Send high nibble
+    swapf   Temp, W       ; Swap nibbles, result in W
+    andlw   0x0F          ; Mask off high nibble
+    call    NibbleToASCII
+    call    SendChar
+    
+    ; Send low nibble
+    movf    Temp, W       ; Get original byte
+    andlw   0x0F          ; Mask off high nibble
+    call    NibbleToASCII
+    call    SendChar
+    
+    return
+
+; Convert nibble in W to ASCII hex character
+NibbleToASCII:
+    addlw   '0'           ; Convert to ASCII
+    movwf   Temp          ; Store temporarily
+    movlw   '9'           ; Load '9' for comparison
+    cpfslt  Temp, 0       ; Skip if Temp < '9'+1 (W = '9'+1)
+    goto    AlphaChar     ; It's A-F
+    movf    Temp, W       ; It's 0-9, retrieve the value
+    return
+    
+AlphaChar:
+    movf    Temp, W       ; Get value back
+    addlw   7             ; Adjust for A-F (ASCII 'A' - '9' - 1 = 7)
+    return
 ;-------------------------------------------------------------------------------
 ; I2C Helper Functions
 ;-------------------------------------------------------------------------------
@@ -2713,12 +2999,24 @@ POLLING_DONE:
     return
     
 FLASH_LED:
-    movlw   11000000B
-    movwf   PORTA, A
-    call    I2C_DELAY       ; Changed from DELAY to I2C_DELAY
-    movlw   10000000B
-    movwf   PORTA
-    return    
+    ; Save current PORTD state (optional)
+    movf    PORTD, W
+    movwf   Temp
+    
+    ; Flash the white LED on RD5
+    bsf     PORTD, 5        ; Turn on white LED (RD5)
+    call    I2C_DELAY       ; Delay
+    bcf     PORTD, 5        ; Turn off white LED (RD5)
+    call    I2C_DELAY       ; Delay (optional)
+    bsf     PORTD, 5        ; Turn on white LED again (optional)
+    call    I2C_DELAY       ; Delay (optional)
+    bcf     PORTD, 5        ; Turn off white LED again
+    
+    ; Restore original PORTD state (optional)
+    movf    Temp, W
+    movwf   PORTD
+    
+    return   
     
 ; Renamed from DELAY to I2C_DELAY to avoid conflicts
 I2C_DELAY:    
@@ -2737,10 +3035,10 @@ LOOP2:
     org 0x3000
     
 StartupStr:
-    db "Team 100 iTrack, Therefore I Am", 0x0D, 0x0A, "Starting in Race mode...", 0x0D, 0x0A, 0
+    db "Team 022 iTrack, Therefore I Am", 0x0D, 0x0A, "Starting in Race mode...", 0x0D, 0x0A, 0
 
 MenuStr1:
-    db "Team 100 iTrack, Therefore I Am", 0x0D, 0x0A, 0
+    db "Team 022 iTrack, Therefore I Am", 0x0D, 0x0A, 0
 
 ; Default slogan to be stored in RAM for editing
 DefaultSlogan:
@@ -2770,7 +3068,7 @@ RaceStr:
 
 DiagnosticsStr:
     db "Diagnostics mode", 0x0D, 0x0A
-    db "Enter: S (sensor test), F (forward), L (left), R (right)", 0x0D, 0x0A
+    db "Enter: S (sensor test), F (forward), L (left), R (right), T (stop)", 0x0D, 0x0A
     db "Type 'Howzit' to return to main menu", 0x0D, 0x0A, 0
 
 ProgramStr:
@@ -2827,6 +3125,37 @@ RightStr:
 
 SloganUpdatedStr:
     db "Slogan updated successfully!", 0x0D, 0x0A, 0
+
+SensorHeaderStr:
+    db "Sensor Readings:", 0x0D, 0x0A, 0
+
+SendStopMsg:
+    movlw   high StopStr
+    movwf   TBLPTRH, 0
+    movlw   low StopStr
+    movwf   TBLPTRL, 0
+    call    SendString
+    return
+    
+StopStr:
+    db "Stopping motors...", 0x0D, 0x0A
+    db "Still in Diagnostics mode. Enter another command or type 'Howzit' to return to main menu", 0x0D, 0x0A, 0
+    
+SelectColorFirstStr:
+    db "Please select a color first using Select Color mode", 0x0D, 0x0A, 0
+
+RedForRaceStr:
+    db "Ready to race on RED track", 0x0D, 0x0A, "Press the Start button or use INT2 to begin racing", 0x0D, 0x0A, 0
+
+GreenForRaceStr:
+    db "Ready to race on GREEN track", 0x0D, 0x0A, "Press the Start button or use INT2 to begin racing", 0x0D, 0x0A, 0
+
+BlueForRaceStr:
+    db "Ready to race on BLUE track", 0x0D, 0x0A, "Press the Start button or use INT2 to begin racing", 0x0D, 0x0A, 0
+
+BlackForRaceStr:
+    db "Ready to race on BLACK track", 0x0D, 0x0A, "Press the Start button or use INT2 to begin racing", 0x0D, 0x0A, 0
+
 
 ;========== RAM Buffer ==========
     org 0x100
